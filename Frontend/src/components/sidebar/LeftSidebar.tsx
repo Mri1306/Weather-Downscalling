@@ -138,7 +138,10 @@ export function LeftSidebar({
               autoComplete="off"
             />
             {loading && (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin" style={{ color: 'var(--muted)' }} />
+              /* FIX: wrapper centres the icon; only the icon spins, so the spin no longer overrides the centring transform */
+              <span className="absolute right-3 top-0 bottom-0 flex items-center pointer-events-none">
+                <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--muted)' }} />
+              </span>
             )}
             {open && (
               <div className="sidebar-dropdown">
