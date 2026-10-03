@@ -128,9 +128,9 @@ const XAI_PARTS = [
 const LIMITATIONS = [
   { title: 'Not a forecast',        body: 'It refines existing coarse rainfall. It does not predict future weather.' },
   { title: 'Reference, not truth',  body: 'Scored against CHIRPS v2.0. IMD and CHIRPS disagree at daily scale, so part of every error is their disagreement.' },
-  { title: 'Coastal gaps',          body: '3,389 panchayats sit on coastal cells the land mask excludes. They get no value rather than an invented one.' },
+  { title: 'Coastal gaps',          body: 'A few coastal panchayats (3,389) fall on cells outside the land mask, so rainfall estimates are not available for them.' },
   { title: 'Monsoon only',          body: 'June–September data only. There is nothing for the winter season.' },
-  { title: 'Extreme rain is hard',  body: 'The deployed model beats the baseline at every threshold, but days above 100 mm are still largely missed. Every value is a single estimate, not a probability range.' },
+  { title: 'Extreme rain is hard',  body: 'The model improves on the baseline at every threshold. Very heavy days above 100 mm remain the hardest to capture, and each value is a single estimate rather than a range.' },
 ];
 
 /* ── FAQ ─────────────────────────────────────────────────────────────────── */
@@ -425,7 +425,7 @@ export function LandingPage() {
               <div className="flex flex-wrap items-center gap-2 mb-5">
                 <span className="stat-pill">
                   <Activity className="w-3 h-3" />
-                  SIH 2026 · Layer 1
+                  SIH 2026
                 </span>
                 <span className="stat-pill">
                   <GitBranch className="w-3 h-3" />
@@ -653,8 +653,8 @@ export function LandingPage() {
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/figures/panchayat-map.png" alt="Panchayat rainfall map, 1 June 2022" loading="lazy"
-                  className="h-24 w-auto rounded-md" style={{ background: '#fff', border: '1px solid var(--hairline-strong)' }} />
-                <span className="text-[0.65rem] leading-relaxed max-w-[11rem]" style={{ color: 'var(--muted)' }}>
+                  className="h-40 w-auto rounded-md" style={{ background: '#fff', border: '1px solid var(--hairline-strong)' }} />
+                <span className="text-[0.65rem] leading-relaxed max-w-[12rem]" style={{ color: 'var(--muted)' }}>
                   Daily rainfall per Gram Panchayat, 1 June 2022. Click to enlarge.
                 </span>
               </a>

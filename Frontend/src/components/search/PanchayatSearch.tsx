@@ -78,7 +78,7 @@ export function PanchayatSearch({ onSelect, placeholder = 'Search panchayat, blo
           autoComplete="off"
         />
         {loading && (
-          <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 text-muted w-4 h-4 animate-spin" />
+          <span className="absolute right-4 top-0 bottom-0 flex items-center pointer-events-none"><Loader2 className="text-muted w-4 h-4 animate-spin" /></span>
         )}
       </div>
 
