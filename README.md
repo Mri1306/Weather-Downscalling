@@ -1,6 +1,6 @@
 # Panchayat Rainfall Downscaling & Agro-Advisory — Layers 1–3
 
-**What it is:** the complete SIH pipeline, all three layers, in one repository.
+**Overview:** the complete SIH pipeline, all three layers, in one repository.
 **Layer 1** refines coarse IMD 0.25° daily rainfall with SRTM elevation and ERA5-Land
 context through a small residual U-Net into a fine 0.05° daily rainfall field, scored
 against CHIRPS 0.05° as the fine-resolution **reference**. **Layer 2** maps that field to
@@ -8,7 +8,7 @@ the LGD Panchayat boundaries (86,103 of 87,735 mapped, 98.1%). **Layer 3** turns
 Panchayat's Layer-1 rainfall into a rule-based, explained crop advisory served by a FastAPI
 backend (`backend/`, port 8000) and shown in a Next.js dashboard (`Frontend/`, port 3000).
 
-**Run it in two terminals:**
+**Run locally (two terminals):**
 
 ```bash
 cd backend  && pip install -r requirements.txt && uvicorn app:app --reload --port 8000
@@ -18,16 +18,16 @@ cd Frontend && npm install && npm run dev          # http://localhost:3000
 The backend runs with **no API keys** (advisory and explain fall back to deterministic
 templates). `backend/README.md` documents every route and what data backs it.
 
-**Current status (be honest when presenting):**
+**Project status:**
 
-* ✅ **Layer-1 DATASET complete for the Deccan region** (`region="deccan"`):
+* ✅ **Layer-1 dataset complete for the Deccan region** (`region="deccan"`):
   5 monsoons (2018–2022), 610 days, 47,250 land cells, model-ready
   `X/Y/M_{train,val,test}.npy`, plus auxiliary layers (admin, soil, NDVI, LULC)
   for Layer-2. End-to-end QA passes (`scripts/verify_dataset.py`).
 * ✅ Model **methodology validated on the Western Ghats pilot** (older, smaller
   run: 2019–2022, 122-day splits — §4). That pilot proved the pipeline works
   end-to-end and beat the baseline.
-* ✅ **Model training/evaluation on the Deccan dataset IS done** — six ablation
+* ✅ **Model training/evaluation on the Deccan dataset is done** — six ablation
   rows (A–F) plus the deployed E+F ensemble, selected on the **validation** split
   only. On the unseen 2022 test split the shipped model gives MAE 8.43 mm /
   RMSE 15.00 / corr 0.527 against the bilinear baseline's 9.60 / 18.18 / 0.385,
@@ -38,35 +38,51 @@ templates). `backend/README.md` documents every route and what data backs it.
   and Panchayat mapping produced the final CSV, summary, GeoJSON, map, and QC
   artifacts in `outputs/layer2/`. The run mapped 86,103 of 87,735 Panchayats
   (98.1% coverage); 1,632 coastal/off-grid Panchayats remain unmapped.
-  RAG / dashboards are not built.
+  No retrieval-augmented (RAG) search layer is included.
 
-## 0. File map — what is what, who uses what (read this first)
+**What the product delivers (user view):**
 
-**New here?** Read this table, then §1–§3 for context, then `docs/HANDOVER.md` for
+| Capability | Where | State |
+|---|---|---|
+| Panchayat-level daily rainfall, verified against the Layer-1 field | `POST /auth/`, `GET /api/advisory` | live |
+| Panchayat search with district/block disambiguation | dashboard, `GET /api/panchayats`, `GET /api/geocode` | live |
+| Rainfall card + map for a chosen date | dashboard (`Frontend/`) | live |
+| Crop + growth-stage advisory: risk band, headline, action list | `GET`/`POST /api/advisory`, `POST /api/advisory/block` | live |
+| "Why this advisory?" — triggered rules, per-action evidence, measured soil characteristics, observed/user/derived/not-available split | advisory response | live |
+| "Why this number?" — one entry per model input channel, rule margins, provenance | `POST /api/explain`, `GET /api/metrics` | live |
+| Advisory withheld rather than guessed when rainfall cannot be verified (409/422) | backend + dashboard | live |
+| Runs with no API keys (deterministic text); Groq rephrasing and Sarvam translation optional | `backend/.env.example` | live |
+| Multilingual advisory text (`lang=hi-IN` and others) | `POST /api/translate` | with key |
+
+Evaluation artefacts: ablation table A–F + EF and the provenance manifest (`outputs/metrics/`), the served grid (`outputs/prediction_test.npz`), 90 backend tests, and the recorded `qa/` evidence.
+
+## 0. File map — repository contents and their consumers
+
+Read this table first, then §1–§3 for context and `docs/HANDOVER.md` for
 step-by-step training/Layer-2 instructions.
 
-| Path | What it is | Who consumes it |
+| Path | Contents | Consumers |
 |---|---|---|
 | `data/processed/X_{train,val,test}.npy` | Model inputs, 5 channels × 285×200 fine grid, normalized (train-only stats) | **training only** (`train.py`) |
 | `data/processed/Y_{train,val,test}.npy` | CHIRPS 0.05° daily rain (mm/day) — the reference target | **training only** |
-| `data/processed/M_{train,val,test}.npy` | 1 = valid land target, 0 = excluded (sea/coastal). Loss & metrics MUST respect it | **training only** |
+| `data/processed/M_{train,val,test}.npy` | 1 = valid land target, 0 = excluded (sea/coastal). Loss and metrics must respect it | **training only** |
 | `data/processed/meta.json` | Everything about the dataset: dates, split, grid, channels, land-mask rules, normalization, provenance. Committed so a rebuilt dataset can be diffed against the frozen one | humans + every script |
 | `data/aux_data/admin/grid_admin_map_deccan.npz` | Every land cell → state / district / **block** (committed) | **Layer-2** aggregation |
 | `data/aux_data/soil_soilgrids_deccan.npz` | Sand/clay/OC/pH/bulk density on land coarse cells (committed) | **Layer-3** agro-advisory |
 | `data/aux_data/ndvi_monthly_deccan.npz` | 20 monthly NDVI composites Jun–Sep 2018–2022 (committed) | **Layer-3** agro-advisory |
 | `data/aux_data/lulc_fractions_deccan.npz` | 6 land-cover fractions + dominant class per cell (committed) | **Layer-3** + crop context |
 | `data/aux_data/build_summary_deccan.json` | Machine-readable build stats for every aux layer (incl. soil-moisture PENDING status) | humans / QA |
-| `data/reports/*` | Data dictionary, coverage report, missingness report, verification JSON (committed) | humans — read the dictionary before touching data |
-| `data/raw/` | Source downloads (IMD, CHIRPS, DEM, ERA5, GADM, SoilGrids batches, VIIRS slices, WorldCover tiles, LGD panchayats). NOT in git — **reproduce with §5 commands**; per-year/batch caches make re-runs cheap | only rebuilds |
-| `scripts/` | **ACTIVE pipeline (Deccan)**: one script per stage (see §6) — every stage is cached/resumable | the pipeline |
-| `backend/` | The FastAPI app (**Layer 3**, §9): data store, rule engine, Groq/Sarvam text, all `/api/*` routes. Serves on port 8000 and reads every other directory in this repo | the web app, judges |
+| `data/reports/*` | Data dictionary, coverage report, missingness report, verification JSON (committed) | humans — consult the dictionary before modifying data |
+| `data/raw/` | Source downloads (IMD, CHIRPS, DEM, ERA5, GADM, SoilGrids batches, VIIRS slices, WorldCover tiles, LGD panchayats). Not tracked in git — **reproduce with §5 commands**; per-year/batch caches make re-runs cheap | only rebuilds |
+| `scripts/` | **Active pipeline (Deccan)**: one script per stage (see §6) — every stage is cached/resumable | the pipeline |
+| `backend/` | The FastAPI app (**Layer 3**, §9): data store, rule engine, Groq/Sarvam text, all `/api/*` routes. Serves on port 8000 and reads every other directory in this repo | the web app, reviewers |
 | `Frontend/` | The Next.js dashboard (**§9.7**). Reads the backend at `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) | the user |
 | `requirements.txt`, `prediction/` | Pipeline dependencies (**§5**), and the extra U-Net runs `scripts/infer.py` writes locally (`prediction/infer_*.npz`, gitignored — the backend falls back to these if the served grid is absent) | training / inference |
-| `legacy/old-app-snapshot/` | **Legacy, superseded — archive only.** The teammate's original app snapshot (formerly `weather-downscaling-main/`), merged in early; the app now lives at `backend/` + `Frontend/` at the repo root. Kept because it holds the **only committed copies** of the per-Panchayat `panchayat_weather.geojson` (46 MB) and `layer2_mh/` GeoJSON, the Panchayat CSV/PKL exports and `layer1_model.pkl`. Do not wire it up. The same folder holds the old `legacy/frontend_backend_match.patch` | archive / data recovery |
+| `legacy/old-app-snapshot/` | **Legacy, superseded — archive only.** The original app snapshot (formerly `weather-downscaling-main/`), merged in early; the app now lives at `backend/` + `Frontend/` at the repo root. Kept because it holds the **only committed copies** of the per-Panchayat `panchayat_weather.geojson` (46 MB) and `layer2_mh/` GeoJSON, the Panchayat CSV/PKL exports and `layer1_model.pkl`. It is not part of the running application. The same folder holds the old `legacy/frontend_backend_match.patch` | archive / data recovery |
 | `data.zip` | Current **Deccan** model-ready archive (`data/processed/`, ~929 MiB; CRC + shapes verified). **Not in git** — copy from the shared OneDrive folder and run `unzip data.zip` at the repo root (or rebuild, §5). The old pilot archive is kept as `data_pilot_westernghats_LEGACY.zip` (~1.7 GB) | transfer / offline rebuild |
 | `models/`, `outputs/` | **The Deccan run**: checkpoints A–F + `ensemble.json` (the *deployed* model), the served grid `outputs/prediction_test.npz`, the ablation table, the provenance manifest `layer1_manifest.json` and the Layer-2 products | backend, Layer-2, humans |
-| `docs/HANDOVER.md` | **The ops manual**: exact training commands, evaluation rules, Layer-2 recipes, rebuild instructions, all dataset decisions | the person doing training / Layer-2 (you, probably) |
-| `docs/` (rest) | `LOGICAL_VALIDATION_REPORT.md` (the logical/scientific validation report), `COMPREHENSIVE_QA_TEST_REPORT.md` (the executed QA report) and `END_TO_END_QA_TEST_PLAN.md` (its plan). All long-form documentation lives here | humans, judges |
+| `docs/HANDOVER.md` | **The ops manual**: exact training commands, evaluation rules, Layer-2 recipes, rebuild instructions, all dataset decisions | training / Layer-2 operators |
+| `docs/` (rest) | `LOGICAL_VALIDATION_REPORT.md` (the logical/scientific validation report), `COMPREHENSIVE_QA_TEST_REPORT.md` (the executed QA report) and `END_TO_END_QA_TEST_PLAN.md` (its plan). All long-form documentation lives here | humans, reviewers |
 | `qa/` | The QA **evidence**: one script per investigation plus its recorded JSON result, cited by `docs/LOGICAL_VALIDATION_REPORT.md` §19. `qa/README.md` says how to re-run them | reviewers |
 
 ---
@@ -95,7 +111,7 @@ ERA5-Land daily T/Tmax/Td   ─┘            (optional channels)         │
 * **Loss:** masked MAE (default) or a heavy-rain-weighted MAE (selected by
   validation, see §3).
 
-## 2. Regions, datasets and references (all real; no GEE authentication required)
+## 2. Regions, datasets and references
 
 ### 2.1 Regions
 
@@ -110,7 +126,7 @@ Two named regions live in `scripts/config.py` (`config.REGIONS`):
 
 Exactly the nine sources below were consumed by the shipped Deccan build. Anything
 evaluated and **not** used (ESA WorldCereal crop type, ERA5-Land soil moisture) is
-listed as such in §7 — this table is deliberately not aspirational.
+listed as such in §7 — this table lists only sources the shipped build consumed.
 
 | Dataset | Version / resolution | Period used | Role here | Lands at | Reference |
 |---|---|---|---|---|---|
@@ -124,7 +140,7 @@ listed as such in §7 — this table is deliberately not aspirational.
 | **ESA WorldCover** | v200, 2021, 10 m COG | 2021 | **aux**: 6 per-class area fractions + dominant class (R8 rule) | `data/raw/lulc/` → `data/aux_data/` | ESA — [WorldCover S3 tiles](https://esa-worldcover.s3.eu-central-1.amazonaws.com/) |
 | **LGD Gram-Panchayat boundaries** | release tag `admin/panchayats` (~368 MB GeoParquet) | static | **the Layer-2 join key**: the 87,735 Panchayats of the ROI, with real LGD codes | `data/raw/administrative/panchayat/` | Local Government Directory, Ministry of Panchayati Raj — [lgdirectory.gov.in](https://lgdirectory.gov.in); CC0-1.0 redistribution via [india-geodata](https://github.com/yashveeeeeeer/india-geodata), aggregating [ramSeraph/indian_admin_boundaries](https://github.com/ramSeraph/indian_admin_boundaries) |
 
-Fetching is two commands plus one: `scripts/download_or_export.py` (IMD, CHIRPS,
+Fetching uses two commands plus one more: `scripts/download_or_export.py` (IMD, CHIRPS,
 DEM, ERA5), `scripts/build_aux.py` (GADM, SoilGrids, NDVI, WorldCover) and
 `scripts/fetch_lgd_panchayats.py` for the LGD boundaries — the last one only
 because they are a separate ~368 MB release that needs a SHA-256 check and a clip
@@ -139,7 +155,7 @@ for clay / NDVI / land cover, for the Layer-3 rules.
 Each dataset stays under its provider's own terms; where this repository records a
 licence explicitly it is the LGD redistribution above (**CC0-1.0, public domain**,
 stated in `scripts/fetch_lgd_panchayats.py`). Derived layers are documented per
-file in `data/reports/data_dictionary_deccan.md`, which is the artefact to quote
+file in `data/reports/data_dictionary_deccan.md`, which is the reference work
 when describing what was built from what.
 
 ## 3. Methods
@@ -147,7 +163,7 @@ when describing what was built from what.
 * **Fine grid:** exactly 5×5 sub-cell centers per IMD cell (0.05°,
   area-tiling). Every resampling operation is documented in
   `data/processed/meta.json` (`resampling_operations`).
-* **Land mask (important):** an IMD coarse cell is *land* iff ≥50% of aligned
+* **Land mask:** an IMD coarse cell is *land* iff ≥50% of aligned
   days have valid IMD rainfall. Fine pixels enter **Y/M** only if the parent
   coarse cell is land **and** CHIRPS is valid on *every* aligned day — the
   coastal strip within one CHIRPS cell of CHIRPS-ocean is structurally missing
@@ -184,9 +200,9 @@ when describing what was built from what.
 * **Data-quality checks** (`quality.py`, run inside `preprocess.py`): date and
   coordinate alignment, latitude/longitude ordering, duplicate timestamps,
   missing-value fractions, rainfall units, DEM validity, ERA5 daily-aggregation
-  sanity. Failures are loud, not silently repaired.
+  sanity. Failures are reported explicitly, not silently repaired.
 * **Aux-layer QC** (`scripts/verify_dataset.py`): array shapes vs meta, mask
-  semantics, aux layers index the same land cells, value ranges sane. Run it
+  semantics, aux layers index the same land cells, value ranges within expected bounds. Run it
   after any rebuild; it exits non-zero on any problem.
 
 ## 4. Results — the Deccan run (shipped) and the Western-Ghats pilot (historical)
@@ -229,7 +245,7 @@ every row at every threshold, so any single number here can be audited.
 | F | D + ≥50 mm-weighted loss | 8.64 | 15.67 | 0.449 | 9.03 | 16.53 | 0.510 | 0.584 | **0.445** | **0.320** |
 | **EF** | **DEPLOYED — E+F ensemble (E weight 0.5)** | 7.88 | 13.71 | **0.466** | **8.43** | 15.00 | **0.527** | 0.601 | 0.442 | 0.284 |
 
-**What the deployed row buys, as deltas rather than adjectives** (test split):
+**Deployed gain over the baseline, as measured deltas** (test split):
 
 | Metric | Bilinear baseline (A) | Deployed EF | Change |
 |---|---|---|---|
@@ -256,10 +272,10 @@ every row at every threshold, so any single number here can be audited.
   MAE 8.21 (−14.5 % vs baseline), RMSE 14.57 (−19.9 %) — but F1 ≥ 50 mm 0.129,
   *worse than the baseline's 0.234*. EF gives up 0.22 mm of MAE relative to E and
   buys back the tail (0.284 > 0.234). Nothing shipped is worse than the baseline.
-* **B2 is an honest negative result:** naive per-cell bias correction does not
+* **B2 is a negative result:** naive per-cell bias correction does not
   generalise across monsoon years (test MAE 12.75, worse than doing nothing) —
   the learned residual generalises better than the hand-derived correction.
-* **Tail honesty.** Even deployed, ≥ 100 mm/day events are largely missed (recall
+* **Extreme-rainfall limitation.** Even deployed, ≥ 100 mm/day events are largely missed (recall
   ≈ 0.005) and cells observed above 100 mm are predicted at ≈ 35 mm. Against this
   reference the model is better than not modelling; it is **not** a reliable
   extreme-rainfall predictor. See §10.
@@ -288,7 +304,7 @@ every row at every threshold, so any single number here can be audited.
 * **Reproducible from committed artefacts, in minutes:** `python scripts/ablation.py`
   rebuilds this table on CPU (~80 s) and re-applies the same validation-only
   selection rule; `python generate_pred.py` rebuilds the served grid and its
-  manifest; `python -m pytest backend/tests` runs 69 tests including the
+  manifest; `python -m pytest backend/tests` runs 90 tests including the
   artifact-consistency contract.
 
 ### 4.4 The benchmark it is scored against (row A)
@@ -319,15 +335,13 @@ shipped product; they are kept so the methodology trail stays visible.
 
 * The pilot's selected model **D** had **15.9% lower MAE than the bilinear
   baseline** on unseen 2022 data. Correlation rose monotonically B → C → D.
-* **B2 is an honest negative result:** naive per-cell bias correction does not
+* **B2 is a negative result:** naive per-cell bias correction does not
   generalize across monsoon years — the learned residual does it better.
 * **MAE vs weighted loss trade-off is real:** MAE training minimizes mean
   error but smooths heavy rain; the weighted loss trades ~0.7 mm MAE for far
   better heavy-rain detection (relevant for agriculture).
-* The table above is the historical **pilot** run (Western Ghats, 2019–2022),
-  kept so the methodology trail stays visible. The Deccan numbers that ship are
-  the box at the top of this section; `outputs/metrics/ablation_summary.md` is
-  the artefact of record.
+* The Deccan numbers that ship are in §4.2; `outputs/metrics/ablation_summary.md`
+  is the artefact of record.
 
 ## 5. How to run everything
 
@@ -386,7 +400,7 @@ weather-downscaling/
 │   ├── build_aux.py        # -> data/aux_data (admin/soil/NDVI/LULC) + reports
 │   ├── fetch_lgd_panchayats.py  # Layer-2 input: LGD panchayat boundaries (CC0)
 │   ├── retry_soil_nan.py   # soil NaN diagnostics (genuine SoilGrids nulls)
-│   ├── verify_dataset.py   # end-to-end dataset QA (loud, exit-code)
+│   ├── verify_dataset.py   # end-to-end dataset QA (reports failures, exit code)
 │   ├── train.py / ablation.py / evaluate.py / infer.py
 │   ├── layer2_panchayat_mapping.py / produce_block_rainfall.py / layer2_config.py
 │   └── check_blocks.py
@@ -404,7 +418,7 @@ weather-downscaling/
 └── README.md
 ```
 
-## 7. Outputs of the dataset build (what exists NOW)
+## 7. Dataset-build outputs
 
 1. `data/processed/X/Y/M_{train,val,test}.npy` + `meta.json` — provenance, ROI,
    dates (610), split, grid, land-mask semantics, normalization stats
@@ -431,22 +445,19 @@ weather-downscaling/
    training targets (M=0). The 6 fractions do not sum to 1 in the 104 cells
    containing wetland (class 90), which has no fraction column — documented in
    the data dictionary.
-6. **Soil moisture — OPTIONAL, PENDING (quota-blocked).** The builder
-   (`build_soilmoisture` in `build_aux.py`) fetches daily ERA5-Land volumetric
-   water (0–7 cm; 7–28 cm optional) on the SAME ERA5 lattice as the era5_*
-   channels, cached per (batch, year), and refuses to write an incomplete
-   file. The free Open-Meteo **daily** request limit was exhausted before
-   materialization (one 64-loc × 122-day request ≈ 7.8k weight units; ~34
-   such requests needed). **Resume on any later day** with:
-   `python scripts/build_aux.py --region deccan --skip-admin --skip-soil --skip-ndvi --skip-lulc`
-   — repeat across daily resets until it prints `done`; caches make each
-   attempt additive. Layer-3 agro-advisory input, NOT a U-Net channel.
+6. **Soil moisture — optional, pending (Open-Meteo daily quota).** `build_soilmoisture`
+   in `build_aux.py` fetches daily ERA5-Land volumetric water (0–7 cm) on the same
+   ERA5 lattice as the era5_* channels, cached per (batch, year), and refuses to write
+   an incomplete file; the free daily request limit was exhausted before
+   materialization. Resume with `python scripts/build_aux.py --region deccan
+   --skip-admin --skip-soil --skip-ndvi --skip-lulc` across daily resets (caches are
+   additive). A Layer-3 agro-advisory input, not a U-Net channel.
 7. **Wind:** the raw ERA5 cache now contains clean 10 m wind for ALL 610 days
    (the 2018 fetch was repaired in place; land variables bit-identical). It is
-   still NOT a model channel: the frozen dataset was preprocessed with the
+   still not a model channel: the frozen dataset was preprocessed with the
    5-channel baseline and `CHANNELS_ALL` intentionally keeps it out — add it
    only via a documented re-preprocess (HANDOVER §7).
-8. **ESA WorldCereal (crop type) — evaluated, NOT included:** the only
+8. **ESA WorldCereal (crop type) — evaluated, not included:** the only
    no-auth distribution is Zenodo record 7875105 (global multi-GB ZIPs of 106
    agro-ecological-zone GeoTIFFs, AEZ-specific seasonality); acquisition +
    alignment to our lattice is a standalone task, out of scope for the data
@@ -479,7 +490,7 @@ this direct:
   bulk API. The ID schema in the admin map is LGD-joinable: fetch the LGD
   panchayat layer for the states of interest, intersect block polygons with
   panchayat polygons once, and every cell inherits its panchayat the same way.
-  **This is the ONLY remaining external Layer-2 input**: the mapping expects
+  **This is the only remaining external Layer-2 input**: the mapping expects
   `data/raw/administrative/panchayat/LGD_Panchayats.parquet` (override with
   `--panchayats`), and `layer2_panchayat_mapping.py` exits with a clear error
   until it is present.
@@ -503,7 +514,7 @@ It is **LGD-derived** (official Local Government Directory, Ministry of
 Panchayati Raj, bundled in a CC0 public-domain redistribution) and carries real
 LGD codes, so it is the authoritative tier — not a fallback. Non-LGD boundary
 sets (data.gov.in / Datameet / state GIS) remain **geometry-only substitutes and
-are NOT equivalent to LGD**. The 15 states the Deccan grid covers (from
+are not equivalent to LGD**. The 15 states the Deccan grid covers (from
 `data/aux_data/admin/grid_admin_map_deccan.npz`): AndhraPradesh, Chhattisgarh,
 DadraandNagarHaveli, DamanandDiu, Goa, Gujarat, Karnataka, Kerala,
 MadhyaPradesh, Maharashtra, Puducherry, Rajasthan, TamilNadu, Telangana,
@@ -642,11 +653,39 @@ what `/api/explain` and the dashboard's XAI panel render — the explanation is
 computed, not generated.
 
 A rule with a missing input reports **`evaluable: false`** with the reason instead
-of staying silent or guessing. The sharpest example is `R3_HEAT_STRESS`: a heat
+of staying silent or guessing. The clearest example is `R3_HEAT_STRESS`: a heat
 threshold only applies inside a crop's sensitive window, so an **unknown crop stage
 makes the rule unevaluable** rather than assuming the crop is heat-sensitive (this
 was a real defect, fixed — see `docs/LOGICAL_VALIDATION_REPORT.md` A-6, and
 `backend/tests/test_advisory.py`).
+
+**"Why this number?" vs "Why this advisory?"** — the two explanations are now kept
+strictly apart. `POST /api/explain` explains the **rainfall estimate** from the
+model inputs (IMD, DEM, ERA5); the advisory carries its own, separate agricultural
+evidence, all deterministic and returned by `GET /api/advisory`:
+
+* `advisory_context` — the exact crop parameters applied and whether the user's
+  crop/stage choice **actually changed which rules fired**. That is measured by
+  re-running the real rules once with `crop="general"` and no stage on the same
+  weather (`materially_changed`); when it changes nothing the trace says so rather
+  than pretending the advice was crop-specific.
+* `action_items` — every recommended action attributed to the rule that produced
+  it, with that rule's measured `inputs` as evidence (`evidence → action`). Action
+  wording is context-sensitive: the heat-stress irrigation note is offered only
+  when the soil is dry, so it cannot contradict the heavy-rain advice to hold
+  irrigation, and the water-stress wording for low NDVI appears only when
+  rainfall is also low.
+* `soil_context` — the **measured** SoilGrids characteristics actually retrieved
+  (clay/sand g/kg, pH, organic carbon, bulk density), never a fabricated "soil
+type": the dataset encodes no classification, and the text says so.
+* `crop_suitability` — either a data-grounded suggestion or, as here, an explicit
+  **"Insufficient data for a data-grounded crop-suitability suggestion"** (this
+  deployment has no crop-type and no soil-classification dataset).
+* `evidence_groups` — every decision value split into `observed` / `user_provided`
+  / `derived` / `not_available`, so nothing can be presented as more than it is.
+
+`crop_detected` is always `false` and the crop is always the user's own selection;
+missing inputs are named, not filled in.
 
 ### 9.4 Confidence is computed, never asked of the model
 
@@ -664,14 +703,17 @@ inputs support.
 * **Groq** is called through an **ordered multi-model chain** with cooldowns: if a
   model fails or is rate-limited the next one is tried, and the attempts are
   returned in the response. It receives the deterministic trace and returns
-  prose — it cannot add, remove or re-rank a rule.
+  prose — it cannot add, remove or re-rank a rule. Message length is capped
+  (advisory: at most 5–6 short sentences, fewer when the situation is simple;
+  estimate explanation: 3–4), and the recommended-action list is never rewritten
+  by the model.
 * **Faithfulness guard:** a rewrite is accepted **only if it introduces no number
   absent from the trace** (`is_faithful`: every number in the message must already
   appear in the rule evidence). A rephrase that invents a figure is discarded and
   the deterministic template is used instead.
 * **Sarvam** (`mayura:v1`) translates the advisory for `lang=hi-IN` and other
   supported codes; a missing key returns a clear 502 and leaves the server up.
-* **No keys, fully functional:** with empty `GROQ_API_KEY` / `SARVAM_API_KEY` the
+* **Works without API keys:** with empty `GROQ_API_KEY` / `SARVAM_API_KEY` the
   advisory is the deterministic text and `/api/explain` reports
   `provider: "rules"`. Nothing in Layer 3 requires an external service.
 
@@ -691,7 +733,7 @@ inputs support.
 | `POST /api/translate` | Sarvam translation of advisory text |
 | `POST /auth/` , `POST /auth` | the NL query path: resolves the named Panchayat, serves the Layer-1 value for the date, and returns an answer with its sources |
 
-The verification contract is the part worth reading twice: `GET /api/advisory`
+The verification contract is central: `GET /api/advisory`
 resolves the Panchayat's own Layer-1 value through
 `data_store.panchayat_grid_value()` and then
 
@@ -703,7 +745,7 @@ resolves the Panchayat's own Layer-1 value through
 | date outside the served grid / masked cell / unknown Panchayat | **422** with `reason` = `date_unavailable` / `masked_cell` / `unknown_panchayat` |
 | no data layer mounted (text-only deployment) | `rainfall_mm` is required, and 200 is labelled `unverified_no_data_source` |
 
-So an advisory can never be produced for a rainfall figure that is not the one
+An advisory therefore can never be produced for a rainfall figure that is not the one
 the model actually produced for that place and day. `backend/README.md` documents
 the same contract route by route.
 
@@ -711,10 +753,14 @@ the same contract route by route.
 
 Next.js on port 3000, reading the backend at `NEXT_PUBLIC_API_URL` (default
 `http://localhost:8000`). Panchayat search (with district/block disambiguation),
-the rainfall card and map for a chosen date, the advisory panel (risk chip, action
-bullets, the evidence row with the exact rainfall and date used), the XAI panel
-(which rule fired, by how much it missed the threshold, and what would flip it) and
-a model card fed by `/api/metrics`.
+the rainfall card and map for a chosen date, the advisory panel (risk chip, **evidence-attributed action bullets**, an
+expandable **"Why this advisory?"** drawer with the crop/stage context, the
+measured soil characteristics, the triggered rules and the observed / user-provided
+/ derived / not-available evidence split), the XAI panel (**"Why this number?"** —
+one entry per model input channel, so the panel can never present a subset of the
+model's inputs as if it were the complete set — which model input drove the
+rainfall, which rule fired, by how much it missed the threshold, and what would
+flip it) and a model card fed by `/api/metrics`.
 
 The frontend holds **no second copy of the rules**. When the backend refuses
 (409/422) the panel shows an explicit *"Advisory withheld"* with the reason, and if
@@ -726,46 +772,34 @@ disagreed with the engine in the band a farmer actually sees; it was removed —
 
 ### 9.8 How Layer 3 is verified
 
-`python -m pytest backend/tests` — **69 tests**, no network and no keys needed:
+`python -m pytest backend/tests` — **90 tests**, no network and no keys needed:
 the rule engine at every threshold boundary, the advisory-verification contract
 (409/422 for every refusal reason), the artifact-consistency contract (the served
-grid matches the provenance manifest), the aux wiring and the frontend contract.
+grid matches the provenance manifest), the aux wiring, the frontend contract, and
+`backend/tests/test_advisory_context.py` — crop/stage causality (measured, not
+asserted), soil-evidence fidelity, the no-fabrication guarantee and the unchanged
+rainfall contract.
 On top of that, `qa/qa_logic_advisory.py` sweeps **every** threshold at T±ε and
 runs 11 one-input perturbations to prove each input is causally used, and
 `qa/qa_logic_http.py` checks identity binding and cache isolation over live HTTP.
 
-## 10. Limitations
+## 10. Scope and known limits
 
-* **`GET /api/advisory` accepts a smaller crop-stage vocabulary than `POST`**
-  (finding A-9). The GET query enum is `general | sowing | vegetative | flowering
-  | ripening | harvest`, while the POST body takes any stage string. `grain_filling`
-  and `maturity` — the two stages the heat rule depends on most — are therefore
-  reachable through POST but rejected as **422** by GET (`ripening` covers
-  `maturity` via a synonym; `grain_filling` has no equivalent), so a GET caller
-  cannot express the stage that makes `R3_HEAT_STRESS` fire. The rules themselves
-  are correct (§9.2/§9.3); the fix is to widen `StageQ` in `backend/main.py`.
+The prototype states each of these explicitly; none of them change
+the behaviour described above.
 
-* **CHIRPS is the reference, not truth.** IMD and CHIRPS disagree substantially
-  at daily scale (domain-mean daily coarse corr on the Deccan build ≈ 0.356);
-  part of every error term is their disagreement, not model error. Weekly and
-  monthly aggregates agree far better — downscaling value is clearest there.
-* **Grid stagger:** CHIRPS' native lattice is offset half a cell from our
-  area-tiling fine grid; Y is a half-cell bilinear sample of CHIRPS. Baseline
-  and models are scored against the same Y, so comparisons are fair.
-* **Monsoon-only window** (Jun–Sep, 2018–2022 for Deccan). No winter data.
-* ~3,007 fine cells (coastal strip + sea fringe) are excluded from Y/M by
-  design; LULC has no class data over the sea-fringe part of them.
-* Soil has genuine SoilGrids nulls (8.8–9.4% per property); NDVI has monsoon
-  cloud gaps (8.0%); neither is imputed — use NaN-aware statistics downstream.
-* Heavy rain remains hard for MAE-trained models; the weighted-loss variant and
-  the deployed E+F ensemble mitigate it (F1 ≥ 50 mm 0.284 vs the baseline's
-  0.234). Be precise about the tail, though: it is still largely missed — recall
-  for ≥ 100 mm/day events is ~0.005, and cells observed above 100 mm are
-  predicted at ~35 mm. The ensemble beats the baseline at every reported
-  threshold; it does not make extreme rainfall well predicted. No
-  probabilistic/uncertainty output yet.
-* The U-Net is deliberately small (117,329 params for the 5-channel/width-16 deployed
-  model — the value is stamped in `outputs/metrics/layer1_manifest.json` and served by
-  `/api/metrics` as `n_parameters`, so it can be checked rather than trusted). Operational
-  use would consume IMD Block forecasts as coarse input, whose error propagates through
-  Layer 1.
+* **Scored against a reference, not ground truth.** CHIRPS v2.0 is the label, and IMD
+  and CHIRPS disagree at daily scale, so part of every error term is their disagreement.
+  Skill is clearest at weekly/monthly totals. Heavy rain stays hard — the deployed model
+  beats the IMD baseline at every reported threshold, but extreme daily events are still
+  largely missed (≥ 100 mm recall ≈ 0.005).
+* **Monsoon-only, Deccan-first, no uncertainty output.** Training/evaluation covers
+  Jun–Sep 2018–2022; there is no winter data and no probabilistic interval yet.
+* **Advisory thresholds are illustrative defaults**, to be validated with an agronomist /
+  KVK / ICAR crop calendar before field use — every advisory response carries this
+  disclaimer.
+* **The crop is the user's choice, not a detection.** No crop-type dataset ships, so
+  `crop_detected` is always `false` and no crop-suitability claim is made; advice changes
+  by crop/stage only where the coded rules genuinely react, and the trace records whether
+  it did. Soil is reported as measured characteristics, never a soil "type", and missing
+  soil/NDVI is marked unavailable rather than imputed.
