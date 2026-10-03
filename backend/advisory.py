@@ -56,7 +56,7 @@ FRONTEND_STAGE = {"general": None, "sowing": "sowing", "vegetative": "vegetative
 #
 # Each table maps  crop -> list of action bullets, with a "_default" fallback that
 # is used for any crop that has no entry of its own. A bullet may contain the
-# token {disease}, which is replaced by the crop's CROP_PARAMS disease name.
+# tokens {disease} (the crop's CROP_PARAMS disease name) and {crop} (the crop name).
 # All crop-specific wording is a prototype placeholder (see module note).
 # --------------------------------------------------------------------------
 ActionTable = dict[str, list[str]]
@@ -116,8 +116,15 @@ R6_SPARSE_ACTIONS: ActionTable = {
                "Compare with nearby fields sown on similar dates"],
 }
 R6_NONVEG_ACTIONS: ActionTable = {
-    "_default": ["Confirm land use at this location before acting",
+    "_default": ["Confirm this location is a {crop} field before acting",
                  "Ground-check the field if it is cropland"],
+    "rice": ["Check whether this is flooded paddy or open water (standing water reads as very low NDVI)",
+             "If it is a paddy field, confirm transplanting has happened"],
+    # wheat / mustard are rabi crops: a bare July field is normal, not a problem
+    "wheat": ["Check whether the field is fallow or unsown (wheat is not normally standing in July)",
+              "Confirm this location is a wheat field before acting"],
+    "mustard": ["Check whether the field is fallow or unsown (mustard is not normally standing in July)",
+                "Confirm this location is a mustard field before acting"],
 }
 
 SEVERITY_TO_UI = {"none": "info", "low": "watch", "medium": "warning", "high": "alert"}
@@ -636,7 +643,8 @@ def _rule_actions(rule: RuleResult, crop: str = "general") -> list[str]:
     table = _action_table(rule)
     acts = table.get(crop) or table.get("_default", [])
     disease = CROP_PARAMS.get(crop, CROP_PARAMS["general"])["disease"]
-    return [a.replace("{disease}", disease) for a in acts]
+    label = "crop" if crop == "general" else crop
+    return [a.replace("{disease}", disease).replace("{crop}", label) for a in acts]
 
 
 def _crop_specific(rule: RuleResult, crop: str) -> bool:
@@ -644,7 +652,7 @@ def _crop_specific(rule: RuleResult, crop: str) -> bool:
     table = _action_table(rule)
     if crop in table:
         return True
-    return any("{disease}" in a for a in table.get("_default", []))
+    return any(("{disease}" in a or "{crop}" in a) for a in table.get("_default", []))
 
 
 def _fired_for_actions(trace: AdvisoryTrace) -> list[RuleResult]:
