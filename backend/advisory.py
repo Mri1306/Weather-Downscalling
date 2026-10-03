@@ -11,6 +11,8 @@ to change for the outcome to flip. That trace IS the explanation.
 
 NOTE: all thresholds below are illustrative defaults for the prototype. Validate
 them with an agronomist / KVK / ICAR crop calendar before any real-world use.
+The crop-specific action wording in RULE_ACTIONS / R6_*_ACTIONS is likewise a
+PLACEHOLDER and needs the same agronomic review.
 """
 from __future__ import annotations
 
@@ -49,29 +51,75 @@ FRONTEND_STAGE = {"general": None, "sowing": "sowing", "vegetative": "vegetative
                   "flowering": "flowering", "grain_filling": "grain_filling",
                   "ripening": "maturity", "maturity": "maturity", "harvest": "harvest"}
 
-# Short action bullets shown as "Recommended Actions" in the UI, per rule.
-# Each rule maps to a dict of crop-specific lists with a "_default" fallback.
-# Short action bullets shown as "Recommended Actions" in the UI, per rule.
-RULE_ACTIONS: dict[str, list[str]] = {
-    "R1_HEAVY_RAIN": ["Delay all field operations", "Clear drainage channels immediately",
-                      "Hold back irrigation and fertiliser"],
-    "R1B_SUBSTANTIAL_RAIN": ["Check that field drainage is working",
-                             "Avoid spraying or fertiliser for about 48 hours"],
-    "R2_IRRIGATION": ["Check field moisture", "Plan irrigation within the next few days"],
+# --------------------------------------------------------------------------
+# "Recommended Actions" shown in the UI.
+#
+# Each table maps  crop -> list of action bullets, with a "_default" fallback that
+# is used for any crop that has no entry of its own. A bullet may contain the
+# token {disease}, which is replaced by the crop's CROP_PARAMS disease name.
+# All crop-specific wording is a prototype placeholder (see module note).
+# --------------------------------------------------------------------------
+ActionTable = dict[str, list[str]]
+
+RULE_ACTIONS: dict[str, ActionTable] = {
+    "R1_HEAVY_RAIN": {"_default": ["Delay all field operations",
+                                   "Clear drainage channels immediately",
+                                   "Hold back irrigation and fertiliser"]},
+    "R1B_SUBSTANTIAL_RAIN": {"_default": ["Check that field drainage is working",
+                                          "Avoid spraying or fertiliser for about 48 hours"]},
+    "R2_IRRIGATION": {
+        "_default": ["Check field moisture", "Plan irrigation within the next few days"],
+        "rice": ["Check the standing-water level in the field",
+                 "Plan irrigation to keep the field wet within the next few days"],
+    },
     # Irrigation is made conditional on the SOIL state, so it cannot contradict the
     # heavy-rain rule's "hold back irrigation" when both fire on the same day.
-    "R3_HEAT_STRESS": ["Avoid spraying in the afternoon",
-                       "Irrigate lightly in the evening only if the soil is dry"],
-    "R4_DISEASE": ["Scout the field for early symptoms",
-                   "Consult your local agriculture office about preventive spray"],
-    "R5_LODGING": ["Avoid irrigating just before strong wind",
-                   "Support or earth-up tall plants where possible"],
-    "R6_VEGETATION": ["Inspect the crop for water stress",
-                      "Check soil moisture before the next irrigation"],
-    "R7_SOIL_DRAINAGE": ["Open field drainage before the next spell",
-                         "Avoid heavy machinery on wet clay soil"],
-    "R8_LANDCOVER": ["Confirm this location is cropland before acting on the advisory"],
+    "R3_HEAT_STRESS": {"_default": ["Avoid spraying in the afternoon",
+                                    "Irrigate lightly in the evening only if the soil is dry"]},
+    "R4_DISEASE": {"_default": ["Scout the field for early symptoms of {disease}",
+                                "Consult your local agriculture office about preventive spray"]},
+    "R5_LODGING": {"_default": ["Avoid irrigating just before strong wind",
+                                "Support or earth-up tall plants where possible"]},
+    "R7_SOIL_DRAINAGE": {"_default": ["Open field drainage before the next spell",
+                                      "Avoid heavy machinery on wet clay soil"]},
+    "R8_LANDCOVER": {"_default": ["Confirm this location is cropland before acting on the advisory"]},
 }
+
+# R6 (vegetation) has three situations, each with its own action table:
+#   STRESS : NDVI low AND rainfall low           -> genuine water-stress signal
+#   SPARSE : NDVI low, rain not low              -> sparse cover / establishment question
+#   NONVEG : NDVI so low it is probably not a crop (water / bare / built-up)
+R6_STRESS_ACTIONS: ActionTable = {
+    "_default": ["Inspect the crop for water stress",
+                 "Check soil moisture before the next irrigation"],
+    "rice": ["Check the standing-water level in the field",
+             "Inspect for water stress or patchy growth"],
+}
+R6_SPARSE_ACTIONS: ActionTable = {
+    "_default": ["Inspect the crop for stress or sparse cover",
+                 "Compare this field with nearby fields"],
+    "rice": ["Check whether the field is flooded or recently transplanted (low NDVI is common then)",
+             "Inspect for patchy establishment, then compare with nearby fields"],
+    # rabi crops: in the monsoon the field is often not sown yet
+    "wheat": ["Confirm whether the crop has been sown yet",
+              "If sown, inspect for patchy emergence or stress"],
+    "mustard": ["Confirm whether the crop has been sown yet",
+                "If sown, inspect for patchy emergence or stress"],
+    # kharif crops: early-season emergence question
+    "maize": ["Inspect for patchy emergence or early stress",
+              "Compare with nearby fields sown on similar dates"],
+    "cotton": ["Inspect for patchy emergence or early stress",
+               "Compare with nearby fields sown on similar dates"],
+    "bajra": ["Inspect for patchy emergence or early stress",
+              "Compare with nearby fields sown on similar dates"],
+    "pulses": ["Inspect for patchy emergence or early stress",
+               "Compare with nearby fields sown on similar dates"],
+}
+R6_NONVEG_ACTIONS: ActionTable = {
+    "_default": ["Confirm land use at this location before acting",
+                 "Ground-check the field if it is cropland"],
+}
+
 SEVERITY_TO_UI = {"none": "info", "low": "watch", "medium": "warning", "high": "alert"}
 
 HEAVY_RAIN_MM = 64.5        # IMD "heavy rainfall" lower bound (24 h)
@@ -83,14 +131,20 @@ WIND_KMH = 40.0
 
 # Auxiliary-data thresholds (soil texture / satellite NDVI / land cover)
 NDVI_LOW = 0.30             # below this, satellite NDVI indicates sparse/stressed vegetation
+NDVI_NONVEG = 0.10          # below this, the surface is probably NOT a crop (water / bare / built-up)
+# Stages where a low NDVI is normal (bare field before sowing, senescence, post-harvest),
+# so R6 is not applied there.
+NDVI_EXPECTED_LOW_STAGES = {"sowing", "maturity", "harvest"}
 CLAY_HIGH_G_PER_KG = 350.0  # above this, soil drains slowly (waterlogging risk on wet days)
 SAND_HIGH_G_PER_KG = 600.0  # above this, soil holds little water (needs irrigation sooner)
 
 # Which rules are actually able to react to the user's crop / stage selection.
 # This is a factual description of the rule set, used to tell the user honestly
 # whether their crop/stage choice did or did not change the advice.
-CROP_SENSITIVE_RULES = ("R2_IRRIGATION", "R3_HEAT_STRESS", "R4_DISEASE", "R5_LODGING")
-STAGE_SENSITIVE_RULES = ("R3_HEAT_STRESS",)
+# R6 reads the crop for its action wording and the stage for its timing gate.
+CROP_SENSITIVE_RULES = ("R2_IRRIGATION", "R3_HEAT_STRESS", "R4_DISEASE", "R5_LODGING",
+                        "R6_VEGETATION")
+STAGE_SENSITIVE_RULES = ("R3_HEAT_STRESS", "R6_VEGETATION")
 
 # Soil characteristics advertised by the SoilGrids aux layer, with display units.
 # These are MEASURED PROPERTIES. The dataset encodes no soil-texture/type class,
@@ -203,8 +257,9 @@ class ContextEffect(BaseModel):
     """How the user's crop / stage selection did (or did not) steer the decision.
 
     Computed by re-running the rule set once with crop="general" and stage=None on
-    the SAME weather and comparing which rules fired, so the claim is measured,
-    not asserted. When nothing changes, the text says so plainly.
+    the SAME weather and comparing which rules fired AND which action bullets they
+    produce, so the claim is measured, not asserted. When nothing changes, the text
+    says so plainly.
     """
     crop: str
     stage: Optional[str] = None
@@ -214,7 +269,7 @@ class ContextEffect(BaseModel):
     crop_parameters: dict = {}                  # the exact thresholds applied (from CROP_PARAMS)
     crop_sensitive_rules: list[str] = []        # rules that read a crop parameter
     stage_sensitive_rules: list[str] = []       # rules that read the crop stage
-    materially_changed: bool = False            # did crop/stage change which rules fired?
+    materially_changed: bool = False            # did crop/stage change which rules fired or what they say?
     explanation: str = ""
 
 
@@ -258,6 +313,12 @@ def _margin(value: float, threshold: float) -> float:
 def _n(x: float) -> str:
     """Compact number formatting so text and trace use identical strings."""
     return f"{x:.1f}".rstrip("0").rstrip(".")
+
+
+def _n3(x: float) -> str:
+    """Three-decimal formatting for small values such as NDVI (0.0285 -> 0.029).
+    `_n` would print that as "0", which hides exactly the number that matters."""
+    return f"{x:.3f}"
 
 
 # --------------------------------------------------------------------------
@@ -416,6 +477,18 @@ def _r_wind(i: PanchayatInput, p: dict) -> RuleResult:
 
 
 def _r_vegetation(i: PanchayatInput, p: dict) -> RuleResult:
+    """Vegetation condition from the monthly NDVI composite.
+
+    Three refinements over a bare "NDVI < 0.30" test:
+      1. STAGE GATE  - at sowing / maturity / harvest a low NDVI is normal (bare
+         field, senescence, stubble), so the rule is not applied there. An unknown
+         stage cannot be gated, so the rule still applies.
+      2. NON-VEGETATED FLOOR - NDVI below NDVI_NONVEG is almost certainly water,
+         bare ground or built-up land, not a stressed crop. The rule still fires
+         (low severity) but says so, and never claims water stress.
+      3. Otherwise: low NDVI + low rain = medium (water-stress signal), low NDVI
+         with rain = low (sparse cover / establishment question).
+    """
     nd = i.aux.ndvi if (i.aux and i.aux.ndvi) else None
     if nd is None or nd.value is None:
         return RuleResult(
@@ -426,19 +499,54 @@ def _r_vegetation(i: PanchayatInput, p: dict) -> RuleResult:
         )
     v = nd.value
     low_rain = i.rainfall_mm < LOW_RAIN_MM_PER_DAY * i.window_days
-    fired = v < NDVI_LOW
+    below = v < NDVI_LOW
+
+    # (1) stage gate: low NDVI is expected here, so do not raise a stress alert
+    if below and i.stage in NDVI_EXPECTED_LOW_STAGES:
+        return RuleResult(
+            rule_id="R6_VEGETATION", name="Vegetation condition", fired=False,
+            inputs={"ndvi": v, "ndvi_month": nd.month, "rainfall_mm": i.rainfall_mm,
+                    "stage": i.stage},
+            condition=f"ndvi < {_n(NDVI_LOW)} (composite {nd.month}); not applied at stage "
+                      f"{sorted(NDVI_EXPECTED_LOW_STAGES)}",
+            margin_pct=_margin(v, NDVI_LOW),
+            flip_hint=(f"NDVI {_n3(v)} is low, but low NDVI is expected at stage '{i.stage}', "
+                       f"so the vegetation rule was not applied"),
+        )
+
+    nonveg = v < NDVI_NONVEG
+    fired = below
+    if nonveg:
+        severity = "low"        # never escalate: this is probably not a crop at all
+    elif low_rain:
+        severity = "medium"
+    else:
+        severity = "low"
+
+    if not fired:
+        advice = ""
+    elif nonveg:
+        advice = (f"Satellite vegetation index is very low ({_n3(v)} in {nd.month}). This usually "
+                  f"means water, bare ground or built-up land rather than a crop, so confirm the land "
+                  f"use before acting.")
+    elif low_rain:
+        advice = (f"Satellite vegetation index is low ({_n3(v)} in {nd.month}) and rainfall is low "
+                  f"- the crop may be water-stressed.")
+    else:
+        advice = (f"Satellite vegetation index is low ({_n3(v)} in {nd.month}) "
+                  f"- check for crop stress or sparse cover.")
+
     return RuleResult(
         rule_id="R6_VEGETATION", name="Vegetation condition", fired=fired,
-        severity=("medium" if (fired and low_rain) else "low" if fired else "none"),
+        severity=severity if fired else "none",
         inputs={"ndvi": v, "ndvi_month": nd.month, "rainfall_mm": i.rainfall_mm},
         condition=f"ndvi < {_n(NDVI_LOW)} (composite {nd.month})",
         margin_pct=_margin(v, NDVI_LOW),
-        flip_hint=(f"would clear if NDVI reached {_n(NDVI_LOW)}" if fired
+        flip_hint=((f"would clear if NDVI reached {_n(NDVI_LOW)}" if not nonveg
+                    else f"NDVI is below {_n(NDVI_NONVEG)}, which points to a non-crop surface; "
+                         f"would clear if NDVI reached {_n(NDVI_LOW)}") if fired
                    else f"fires below NDVI {_n(NDVI_LOW)}"),
-        advice_en=(f"Satellite vegetation index is low ({_n(v)} in {nd.month})"
-                   + (" and rainfall is low — the crop may be water-stressed."
-                      if low_rain else " — check for crop stress or sparse cover.")
-                   if fired else ""),
+        advice_en=advice,
     )
 
 
@@ -496,6 +604,62 @@ _RULES = (_r_heavy_rain, _r_substantial_rain, _r_irrigation, _r_heat, _r_disease
 
 
 # --------------------------------------------------------------------------
+# Action wording (crop-aware)
+# --------------------------------------------------------------------------
+def _is_nonveg(rule: RuleResult) -> bool:
+    """True when an R6 result is the 'probably not a crop' case."""
+    if rule.rule_id != "R6_VEGETATION" or not rule.fired:
+        return False
+    nd = rule.inputs.get("ndvi")
+    return isinstance(nd, (int, float)) and nd < NDVI_NONVEG
+
+
+def _action_table(rule: RuleResult) -> ActionTable:
+    """Pick the action table for a fired rule. R6 depends on which situation fired."""
+    if rule.rule_id == "R6_VEGETATION":
+        if _is_nonveg(rule):
+            return R6_NONVEG_ACTIONS
+        if rule.severity == "medium":
+            return R6_STRESS_ACTIONS
+        return R6_SPARSE_ACTIONS
+    return RULE_ACTIONS.get(rule.rule_id, {})
+
+
+def _rule_actions(rule: RuleResult, crop: str = "general") -> list[str]:
+    """Action bullets for a fired rule, using the crop's own wording when the table
+    has one and the table's "_default" otherwise. "{disease}" is filled from
+    CROP_PARAMS.
+
+    R6 must not tell a farmer to check for water stress on a day of heavy rain, and
+    must not talk about "the crop" when the surface is probably not a crop: the
+    table is chosen by `_action_table` (stress / sparse / non-vegetated)."""
+    table = _action_table(rule)
+    acts = table.get(crop) or table.get("_default", [])
+    disease = CROP_PARAMS.get(crop, CROP_PARAMS["general"])["disease"]
+    return [a.replace("{disease}", disease) for a in acts]
+
+
+def _crop_specific(rule: RuleResult, crop: str) -> bool:
+    """Did this rule's actions actually differ by crop for this crop?"""
+    table = _action_table(rule)
+    if crop in table:
+        return True
+    return any("{disease}" in a for a in table.get("_default", []))
+
+
+def _fired_for_actions(trace: AdvisoryTrace) -> list[RuleResult]:
+    """Fired rules, most severe first, with one de-duplication: when the land-cover
+    rule says this cell is not cropland, a non-vegetated NDVI reading is the same
+    finding, so its action bullets are dropped (R8 already says 'confirm this is
+    cropland before acting')."""
+    fired = sorted((r for r in trace.rules if r.fired), key=lambda r: -_SEV_ORDER[r.severity])
+    r8 = any(r.rule_id == "R8_LANDCOVER" for r in fired)
+    if r8:
+        fired = [r for r in fired if not _is_nonveg(r)]
+    return fired
+
+
+# --------------------------------------------------------------------------
 # Data-grounded context (crop/stage causality, soil, evidence provenance)
 # --------------------------------------------------------------------------
 def _fire_ids(i: PanchayatInput) -> set[str]:
@@ -504,37 +668,54 @@ def _fire_ids(i: PanchayatInput) -> set[str]:
     return {r.rule_id for r in (fn(i, p) for fn in _RULES) if r.fired}
 
 
+def _fired_and_actions(i: PanchayatInput) -> tuple[set[str], set[str]]:
+    """(fired rule ids, action bullets they produce) for this input."""
+    p = CROP_PARAMS[i.crop]
+    fired = [r for r in (fn(i, p) for fn in _RULES) if r.fired]
+    return ({r.rule_id for r in fired},
+            {a for r in fired for a in _rule_actions(r, i.crop)})
+
+
 def context_effect(i: PanchayatInput, rules: list[RuleResult]) -> ContextEffect:
     """State plainly whether crop/stage changed the outcome, and how.
 
     The comparison re-runs the REAL rules on the same weather with crop="general"
-    and no stage, so `materially_changed` is measured, not assumed.
+    and no stage, and compares both WHICH rules fired and WHAT ACTIONS they give, so
+    `materially_changed` is measured, not assumed.
     """
     p = CROP_PARAMS[i.crop]
     fired = {r.rule_id for r in rules if r.fired}
+    actions = {a for r in rules if r.fired for a in _rule_actions(r, i.crop)}
     if i.crop == "general" and i.stage is None:
-        materially, baseline = False, set()
+        ids_changed = actions_changed = False
+        base_ids: set[str] = set()
     else:
-        baseline = _fire_ids(i.model_copy(update={"crop": "general", "stage": None}))
-        materially = baseline != fired
+        base_ids, base_actions = _fired_and_actions(
+            i.model_copy(update={"crop": "general", "stage": None}))
+        ids_changed = base_ids != fired
+        actions_changed = base_actions != actions
+    materially = ids_changed or actions_changed
 
     if i.stage is None:
-        stage_txt = ("No crop stage was selected, so the stage-sensitive rule (heat stress) "
-                     "was not evaluated.")
+        stage_txt = ("No crop stage was selected, so the stage-sensitive rules (heat stress, and the "
+                     "stage gate on vegetation) were not applied.")
     elif i.stage in p["stages"]:
         stage_txt = (f"The selected stage '{i.stage}' is heat-sensitive for {i.crop}, so the "
                      "heat-stress rule was evaluated against it.")
     else:
         stage_txt = (f"The selected stage '{i.stage}' is outside the heat-sensitive window for "
                      f"{i.crop} ({', '.join(sorted(p['stages']))}), so heat stress was not applied.")
-    if materially:
-        diff = sorted(baseline ^ fired)
+    if ids_changed:
+        diff = sorted(base_ids ^ fired)
         changed = (f"Changing crop/stage changed which rules fired ({', '.join(diff) or 'none'}), "
                    "so the recommendation reflects the crop/stage-specific thresholds below.")
+    elif actions_changed:
+        changed = ("The same rules fired as for a general, stage-less advisory on the same weather, "
+                   "but the recommended actions use wording specific to this crop.")
     else:
-        changed = ("Under the current rule set this crop/stage produced the same fired rules as a "
-                   "general, stage-less advisory on the same weather; the difference is confined "
-                   "to the crop/stage-specific thresholds shown here, not a different action list.")
+        changed = ("Under the current rule set this crop/stage produced the same fired rules and "
+                   "actions as a general, stage-less advisory on the same weather; the difference is "
+                   "confined to the crop/stage-specific thresholds shown here.")
     return ContextEffect(
         crop=i.crop, stage=i.stage, user_selected_crop=i.crop,
         crop_detected=False, crop_dataset_available=False,
@@ -625,7 +806,7 @@ def evidence_groups(i: PanchayatInput, trace: AdvisoryTrace) -> dict:
     if i.soil_moisture is None:
         missing.append("soil moisture - irrigation rule used the rain-only fallback")
     if i.stage is None:
-        missing.append("crop stage - heat-stress rule not evaluated")
+        missing.append("crop stage - heat-stress rule not evaluated; vegetation rule not stage-gated")
     if aux is None:
         missing.append("soil / NDVI / land cover - no auxiliary data for this cell")
     return {"observed": observed, "user_provided": provided, "derived": derived,
@@ -731,30 +912,13 @@ def is_faithful(message: str, trace: AdvisoryTrace) -> bool:
     return numbers_in(message) <= allowed_numbers(trace)
 
 
-def _rule_actions(rule: RuleResult) -> list[str]:
-    """Context-aware action bullets for a fired rule.
-
-    Most rules have a fixed bullet list, but R6 must not tell a farmer to check for
-    water stress on a day of heavy rain. When the vegetation rule fires while rain
-    is NOT low (severity "low") its bullets are about cover/sparse growth instead;
-    only low-NDVI + low-rain (severity "medium") means a genuine water-stress signal.
-    """
-    if rule.rule_id == "R6_VEGETATION":
-        if rule.severity == "medium":
-            return RULE_ACTIONS["R6_VEGETATION"]
-        return ["Inspect the crop for stress or sparse cover",
-                "Compare this field with nearby fields"]
-    return RULE_ACTIONS.get(rule.rule_id, [])
-
-
 def actions_for(trace: AdvisoryTrace) -> list[str]:
     """Deduplicated action bullets for the fired rules, most severe first.
-    Uses crop-specific actions when available, falling back to _default."""
+    Uses the crop's own wording where a rule has it, falling back to "_default"."""
     crop = trace.crop
-    fired = sorted((r for r in trace.rules if r.fired), key=lambda r: -_SEV_ORDER[r.severity])
     out: list[str] = []
-    for r in fired:
-        for a in _rule_actions(r):
+    for r in _fired_for_actions(trace):
+        for a in _rule_actions(r, crop):
             if a not in out:
                 out.append(a)
     return out or ["Continue scheduled operations", "Maintain regular irrigation if dry conditions persist"]
@@ -764,18 +928,18 @@ def action_items_for(trace: AdvisoryTrace) -> list[ActionItem]:
     """The same actions as `actions_for`, but each one carries the rule that
     produced it and the measured inputs that made that rule fire - so the UI can
     show `evidence -> action` instead of an unattributed checklist."""
-    fired = sorted((r for r in trace.rules if r.fired), key=lambda r: -_SEV_ORDER[r.severity])
+    crop = trace.crop
     items: list[ActionItem] = []
     seen: set[tuple[str, str]] = set()
-    for r in fired:
-        for a in _rule_actions(r):
+    for r in _fired_for_actions(trace):
+        for a in _rule_actions(r, crop):
             if (r.rule_id, a) in seen:
                 continue
             seen.add((r.rule_id, a))
             items.append(ActionItem(
                 action=a, risk=r.name, rule_id=r.rule_id, severity=r.severity,
                 evidence=dict(r.inputs),
-                crop_relevant=r.rule_id in CROP_SENSITIVE_RULES,
+                crop_relevant=(r.rule_id in CROP_SENSITIVE_RULES) or _crop_specific(r, crop),
                 stage_relevant=r.rule_id in STAGE_SENSITIVE_RULES,
             ))
     if items:
