@@ -51,20 +51,25 @@ FRONTEND_STAGE = {"general": None, "sowing": "sowing", "vegetative": "vegetative
 
 # Short action bullets shown as "Recommended Actions" in the UI, per rule.
 # Each rule maps to a dict of crop-specific lists with a "_default" fallback.
-RULE_ACTIONS: dict[str, dict[str, list[str]]] = {
-    "R1_HEAVY_RAIN": {
-        "_default": ["Delay all field operations", "Clear drainage channels immediately",
+# Short action bullets shown as "Recommended Actions" in the UI, per rule.
+RULE_ACTIONS: dict[str, list[str]] = {
+    "R1_HEAVY_RAIN": ["Delay all field operations", "Clear drainage channels immediately",
                       "Hold back irrigation and fertiliser"],
-    "R1B_SUBSTANTIAL_RAIN": ["Check that field drainage is working", "Avoid spraying or fertiliser for about 48 hours"],
+    "R1B_SUBSTANTIAL_RAIN": ["Check that field drainage is working",
+                             "Avoid spraying or fertiliser for about 48 hours"],
     "R2_IRRIGATION": ["Check field moisture", "Plan irrigation within the next few days"],
     # Irrigation is made conditional on the SOIL state, so it cannot contradict the
     # heavy-rain rule's "hold back irrigation" when both fire on the same day.
     "R3_HEAT_STRESS": ["Avoid spraying in the afternoon",
                        "Irrigate lightly in the evening only if the soil is dry"],
-    "R4_DISEASE": ["Scout the field for early symptoms", "Consult your local agriculture office about preventive spray"],
-    "R5_LODGING": ["Avoid irrigating just before strong wind", "Support or earth-up tall plants where possible"],
-    "R6_VEGETATION": ["Inspect the crop for water stress", "Check soil moisture before the next irrigation"],
-    "R7_SOIL_DRAINAGE": ["Open field drainage before the next spell", "Avoid heavy machinery on wet clay soil"],
+    "R4_DISEASE": ["Scout the field for early symptoms",
+                   "Consult your local agriculture office about preventive spray"],
+    "R5_LODGING": ["Avoid irrigating just before strong wind",
+                   "Support or earth-up tall plants where possible"],
+    "R6_VEGETATION": ["Inspect the crop for water stress",
+                      "Check soil moisture before the next irrigation"],
+    "R7_SOIL_DRAINAGE": ["Open field drainage before the next spell",
+                         "Avoid heavy machinery on wet clay soil"],
     "R8_LANDCOVER": ["Confirm this location is cropland before acting on the advisory"],
 }
 SEVERITY_TO_UI = {"none": "info", "low": "watch", "medium": "warning", "high": "alert"}
