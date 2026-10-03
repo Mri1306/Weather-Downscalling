@@ -34,6 +34,8 @@ log = logging.getLogger("xai-backend")
 # --------------------------------------------------------------------------
 # Config
 # --------------------------------------------------------------------------
+SELF_PING_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("SELF_PING_URL", "")
+SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL_SECONDS", "840"))  # 14 min default
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 # Ordered fallback chain: first = preferred, rest = used only if earlier ones fail.
 GROQ_MODELS = [
@@ -64,9 +66,28 @@ groq_client = AsyncGroq(api_key=GROQ_API_KEY, timeout=GROQ_TIMEOUT, max_retries=
 http = httpx.AsyncClient(timeout=60)
 _cooldown_until: dict[str, float] = {}
 
+async def _self_ping():
+    """Periodically ping our own /health endpoint to prevent Render free-tier spin-down."""
+    url = f"{SELF_PING_URL.rstrip('/')}/health"
+    log.info("Self-pinger started: hitting %s every %ds", url, SELF_PING_INTERVAL)
+    while True:
+        await asyncio.sleep(SELF_PING_INTERVAL)
+        try:
+            r = await http.get(url)
+            log.info("Self-ping %s -> %s", url, r.status_code)
+        except Exception as e:
+            log.warning("Self-ping failed: %s", e)
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    ping_task = None
+    if SELF_PING_URL:
+        ping_task = asyncio.create_task(_self_ping())
+    else:
+        log.info("RENDER_EXTERNAL_URL / SELF_PING_URL not set; self-pinger disabled")
     yield
+    if ping_task:
+        ping_task.cancel()
     await http.aclose()
 
 

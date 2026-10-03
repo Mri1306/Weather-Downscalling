@@ -49,9 +49,11 @@ FRONTEND_STAGE = {"general": None, "sowing": "sowing", "vegetative": "vegetative
                   "flowering": "flowering", "grain_filling": "grain_filling",
                   "ripening": "maturity", "maturity": "maturity", "harvest": "harvest"}
 
-# Short action bullets shown as "Recommended Actions" in the UI, per rule
-RULE_ACTIONS = {
-    "R1_HEAVY_RAIN": ["Delay all field operations", "Clear drainage channels immediately",
+# Short action bullets shown as "Recommended Actions" in the UI, per rule.
+# Each rule maps to a dict of crop-specific lists with a "_default" fallback.
+RULE_ACTIONS: dict[str, dict[str, list[str]]] = {
+    "R1_HEAVY_RAIN": {
+        "_default": ["Delay all field operations", "Clear drainage channels immediately",
                       "Hold back irrigation and fertiliser"],
     "R1B_SUBSTANTIAL_RAIN": ["Check that field drainage is working", "Avoid spraying or fertiliser for about 48 hours"],
     "R2_IRRIGATION": ["Check field moisture", "Plan irrigation within the next few days"],
@@ -741,7 +743,9 @@ def _rule_actions(rule: RuleResult) -> list[str]:
 
 
 def actions_for(trace: AdvisoryTrace) -> list[str]:
-    """Deduplicated action bullets for the fired rules, most severe first."""
+    """Deduplicated action bullets for the fired rules, most severe first.
+    Uses crop-specific actions when available, falling back to _default."""
+    crop = trace.crop
     fired = sorted((r for r in trace.rules if r.fired), key=lambda r: -_SEV_ORDER[r.severity])
     out: list[str] = []
     for r in fired:
